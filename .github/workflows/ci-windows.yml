@@ -1,0 +1,164 @@
+name: ci
+on:
+  push:
+  pull_request:
+  schedule:
+    - cron: '0 0 * * *'
+
+jobs:
+  readme-only:
+    runs-on: windows-latest
+    strategy:
+      matrix:
+        folder:
+          - cookbook/nested-cv
+          - cookbook/serialization
+          - cookbook/grid
+          - cookbook/sql-dump
+          - cookbook/variable-number-of-products
+          - cookbook/dynamic-params
+          - cookbook/python-load
+          - cookbook/file-client
+          - cookbook/report-generation
+          - cookbook/hooks
+          - guides/debugging
+          - guides/sql-templating
+          - guides/logging
+          - guides/testing
+          - guides/serialization
+          - guides/refactor
+          - guides/cron
+          - guides/versioning
+          - templates/mlflow
+          - templates/spec-api-directory
+          - templates/ml-intermediate
+          - templates/spec-api-sql
+          - templates/ml-advanced
+          - templates/exploratory-analysis
+          - templates/shell
+    env:
+      FOLDER: ${{ matrix.folder }}
+      PLOOMBER_STATS_ENABLED: false
+    steps:
+      - uses: actions/checkout@v2
+      - uses: actions/setup-python@v2
+        with:
+          python-version: '3.10'
+      - run: |
+          eval "$(conda shell.bash hook)"
+          conda env create --file $FOLDER/environment.yml --name env
+          conda activate env
+          pip install invoke ipywidgets _pkg/
+          if [ -f "$FOLDER/setup.py" ]; then
+            echo "Found setup.py, installing package..."
+            pip install $FOLDER/
+          fi
+          # test readme.md
+          invoke build --name $FOLDER
+          # TODO: export to argo and validate
+          # ploomberutils validate-argo argo.yaml
+  python-api-examples:
+    runs-on: ubuntu-latest
+    name: python-api-examples
+    env:
+      PLOOMBER_STATS_ENABLED: false
+    steps:
+      - uses: actions/checkout@v2
+      - uses: actions/setup-python@v2
+        with:
+          python-version: '3.10'
+      - run: |
+          # for the tests that depend on git repos
+          git config --global user.email "someone@example.com"
+          git config --global user.name "Someone"
+          cd python-api-examples
+          eval "$(conda shell.bash hook)"
+          conda create --name env python=3.9 pygraphviz -c conda-forge --yes
+          conda activate env
+          pip install -r requirements.txt
+          pytest
+  # These are examples with the same structure, we use the same script
+  projects:
+    runs-on: ubuntu-latest
+    strategy:
+      matrix:
+        folder:
+          # basic
+          - templates/ml-basic
+          - templates/spec-api-r
+          #  intermediate
+          - templates/python-api
+          # advanced
+          # - templates/etl
+          # guides
+          - guides/parametrized
+          - guides/first-pipeline
+          - guides/intro-to-ploomber
+    env:
+      FOLDER: ${{ matrix.folder }}
+      PLOOMBER_STATS_ENABLED: false
+    steps:
+      - uses: actions/checkout@v2
+      - uses: actions/setup-python@v2
+        with:
+          python-version: '3.10'
+      - run: |
+          eval "$(conda shell.bash hook)"
+          conda env create --file $FOLDER/environment.yml --name env
+          conda activate env
+          # some readmes require pygraphviz
+          conda install pygraphviz -c conda-forge --yes
+          pip install _pkg/
+          pip install invoke ipywidgets
+          if [ -f "$FOLDER/setup.py" ]; then
+            echo "Found setup.py, installing package..."
+            pip install $FOLDER/
+          fi
+          # test readme.md
+          invoke build --name $FOLDER
+          # NOTE: i dont think we need this anymore
+          cd $FOLDER
+          ploomber build
+  # The rest have some particular details, so we test them separately
+  ml-online:
+    runs-on: ubuntu-latest
+    name: ml-online
+    env:
+      PLOOMBER_STATS_ENABLED: false
+    steps:
+      - uses: actions/checkout@v2
+      - uses: actions/setup-python@v2
+        with:
+          python-version: '3.10'
+      - run: |
+          # install ploomberutils
+          pip install _pkg/
+          pip install invoke
+          pip install -e "templates/ml-online[dev]"
+          invoke build --name templates/ml-online
+          # TODO: export to argo
+          # validate argo spec
+          # ploomberutils validate-argo argo.yaml
+          # TODO: export to airflow
+  # this is getting stuck and it never finishes
+  # colab:
+  #   runs-on: ubuntu-latest
+  #   name: colab-first-pipeline
+  #   env:
+  #     PLOOMBER_STATS_ENABLED: false
+  #     FOLDER: guides/first-pipeline/
+  #   steps:
+  #     - uses: actions/checkout@v2
+  #     - uses: actions/setup-python@v2
+  #       with:
+  #         python-version: '3.10'
+  #     - run: |
+  #         eval "$(conda shell.bash hook)"
+  #         conda env create --file $FOLDER/environment.yml --name env
+  #         conda activate env
+
+  #         pip install _pkg/
+  #         pip install invoke ipywidgets
+
+  #         # test readme.md
+  #         papermill $FOLDER/colab.ipynb $FOLDER/colab-out.ipynb
